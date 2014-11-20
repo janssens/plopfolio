@@ -2,14 +2,18 @@
 /*
 Plugin Name: Plopfolio
 Description: Allow to manage a portfolio
-Version: 1.3
+Version: 1.4
 Author: Gaëtan Janssens
-Author URI: http://gaetan.janssens.free.fr 
+Author URI: http://plopcom.fr 
 */
 
 # get correct id for plugin
 $thisfile=basename(__FILE__, ".php");
+
+
 define('PLUGINNAME','plopfolio');
+
+global $LANG;
 
 if (!defined('GSADMIN')) {define('GSADMIN', 'admin');}
 
@@ -25,9 +29,9 @@ i18n_merge(PLUGINNAME) || i18n_merge(PLUGINNAME,'en_US');
 register_plugin(
 	PLUGINNAME, 
 	PLUGINNAME,	
-	'1.3',     		
+	'1.4',     		
 	'Gaëtan Janssens',
-	'http://gaetan.janssens.free.fr', 
+	'http://plopcom.fr', 
 	'Allow to manage a portfolio',
 	'pages',
 	PLUGINNAME  
@@ -43,6 +47,9 @@ queue_style('bootstrap-tagmanager',GSBACK);
 
 register_script('bootstrap', $SITEURL.'plugins/'.$thisfile.'/js/bootstrap.js', '2.3.1', FALSE);
 queue_script('bootstrap',GSBACK);
+
+register_script('ckeditor', 'template/js/ckeditor/ckeditor.js', '3.6.2', FALSE);
+queue_script('ckeditor',GSBACK);
 
 
 # hooks
@@ -201,6 +208,10 @@ function portfolio_overview() {
  * @action edit or create new shops
  */
 function edit_entry($id) {
+    global $LANG;
+    global $TEMPLATE;
+    global $SITEURL;
+    global $EDTOOL;
   if ($id) {
 	  $file = GSDATAPORTFOLIOPATH . $id . '.xml';
 	  $data = @getXML($file);
@@ -279,7 +290,7 @@ function edit_entry($id) {
 		?>
     </p>
     <p <?php echo (!ISCLIENTUSED) ? "style=\"display:none\"" : "" ?>>
-	  <b><?php echo ENTRYCLIENTNAME ;?>:</b><br />
+	<b><?php echo ENTRYCLIENTNAME ;?>:</b><br />
       <input class="text client" name="entry-client" type="text" value="<?php echo @$client; ?>" />
     </p>
     <p>
@@ -300,7 +311,7 @@ function edit_entry($id) {
     </p>
     <p>
 	  <b><?php echo ENTRYDESCRIPTION ;?>:</b><br />
-      <textarea name="entry-description" style="height:100px;"><?php echo @$description; ?></textarea>
+      <textarea name="entry-description" id="desc"><?php echo @$description; ?></textarea>
     </p>
     <p>
       <input id="save" name="submit" type="submit" class="submit" value="OK" />
@@ -352,6 +363,41 @@ jQuery(".keywords").tagsManager({
 $('a[rel*=fancybox_iframe]').fancybox({
     'type':'iframe'
 });
+
+<?php
+
+			if(isset($EDTOOL)) $EDTOOL = returnJsArray($EDTOOL);
+			if(isset($toolbar)) $toolbar = returnJsArray($toolbar); // handle plugins that corrupt this
+
+			else if(strpos(trim($EDTOOL),'[[')!==0 && strpos(trim($EDTOOL),'[')===0){ $EDTOOL = "[$EDTOOL]"; }
+
+			if(isset($toolbar) && strpos(trim($toolbar),'[[')!==0 && strpos($toolbar,'[')===0){ $toolbar = "[$toolbar]"; }
+			$toolbar = isset($EDTOOL) ? ",toolbar: ".trim($EDTOOL,",") : '';
+			$options = isset($EDOPTIONS) ? ','.trim($EDOPTIONS,",") : '';
+
+		?>
+
+    var editor = CKEDITOR.replace( 'desc', {
+        skin : 'getsimple',
+        language : '<?php echo $LANG; ?>',
+        defaultLanguage : '<?php echo $LANG; ?>',
+        <?php if (file_exists(GSTHEMESPATH .$TEMPLATE."/editor.css")) {
+            $fullpath = suggest_site_path();
+        ?>
+        contentsCss: '<?php echo $fullpath; ?>theme/<?php echo $TEMPLATE; ?>/editor.css',
+        <?php } ?>
+        entities : false,
+        uiColor : '#FFFFFF',
+        height: '300px',
+        baseHref : '<?php echo $SITEURL; ?>',
+        tabSpaces:10,
+        filebrowserBrowseUrl : 'filebrowser.php?type=all',
+        filebrowserImageBrowseUrl : 'filebrowser.php?type=images',
+        filebrowserWindowWidth : '730',
+        filebrowserWindowHeight : '500'
+        <?php echo $toolbar; ?>
+        <?php echo $options; ?>
+    });
 </script>
 <?php
 }
@@ -410,27 +456,32 @@ function delete_entry($id) {
  */
 function plopfolio_check($contents) { 
     
-  $tmpContent = $contents;
-  $patternForTheLoop = '/<!--plopfolio_theloop-->([\s\S]+)<!--\/plopfolio_theloop-->/i';
+    $tmpContent = $contents;
+    $patternForTheLoop = '/<!--plopfolio_theloop([\[\]=_a-zA-Z]*)-->([\s\S]+)<!--\/plopfolio_theloop-->/i';
 
-  preg_match($patternForTheLoop,$tmpContent, $matches);
-  if (!empty($matches)&&isset($matches[1])) {
-    $loopcontent = $matches[1];
-    $entriesSorted = returnPortfolioEntries();
-    $newHtml = "";
-    foreach ($entriesSorted as $entry) {
-      $entry_str = $loopcontent;
-      $keys = array("keywords_with_space","img","visuel","thumb","month","year","url","name","client","customer","keywords","desc");
-      foreach ($keys as $key => $value) {
-        $currentPattern = '/\[plopfolio_entry_'.$value.'\]/i';
-        $entry_str = preg_replace($currentPattern, $entry[$value] , $entry_str);
-      }
-      $newHtml .= $entry_str;
+    preg_match($patternForTheLoop,$tmpContent, $matches);
+    if (!empty($matches)&&isset($matches[2])) {
+        $loopcontent = $matches[2];
+        $keywordfilter = false;
+        if(isset($matches[1])&&$matches[1]){
+            $keywordfilter = explode('=',substr($matches[1],2,-1))[1];
+        }
+
+        $entriesSorted = returnPortfolioEntries($keywordfilter);
+        $newHtml = "";
+        foreach ($entriesSorted as $entry) {
+            $entry_str = $loopcontent;
+            $keys = array("keywords_with_space","img","visuel","thumb","month","year","url","name","client","customer","keywords","desc");
+            foreach ($keys as $key => $value) {
+                $currentPattern = '/\[plopfolio_entry_'.$value.'\]/i';
+                $entry_str = preg_replace($currentPattern, $entry[$value] , $entry_str);
+            }
+            $newHtml .= $entry_str;
+        }
+        $tmpContent = preg_replace($patternForTheLoop,$newHtml,$tmpContent);
+        return $tmpContent;
     }
-    $tmpContent = preg_replace($patternForTheLoop,$newHtml,$tmpContent); 
-    return $tmpContent;
-  }
-  return $contents;
+    return $contents;
   
 }
 
@@ -442,34 +493,36 @@ function plopfolio_check($contents) {
  * @function portfolio2
  * @action runs the portfolio plugin on the theme/site page
  */
-function returnPortfolioEntries() {
-  $entries = get_entries();
-  $entriesSorted = array();
-  if (!empty($entries)) {
-    $entries2 = Array();
-    $count=0;
-    foreach ($entries as $entry) {
-      $id = basename($entry, ".xml");
-      $file = GSDATAPORTFOLIOPATH . $entry;
-      $data = getXML($file);
-      $entries2[$count]["id"] = $id;
-      $entries2[$count]["visuel"] = $data->visuel; // retrocompatibilité
-      $entries2[$count]["img"] = $entries2[$count]["visuel"];
-      $entries2[$count]["thumb"] = $data->thumb;
-      $entries2[$count]["month"] = $data->month;
-      $entries2[$count]["year"] = $data->year;
-      $entries2[$count]["url"] = $data->url;
-      $entries2[$count]["name"] = html_entity_decode($data->name, ENT_QUOTES, 'UTF-8');
-      $entries2[$count]["client"] = html_entity_decode($data->client, ENT_QUOTES, 'UTF-8');// retrocompatibilité
-      $entries2[$count]["customer"] = $entries2[$count]["client"] ;
-      $entries2[$count]["keywords"] = strtolower(html_entity_decode($data->keywords, ENT_QUOTES, 'UTF-8'));
-      $entries2[$count]["keywords_with_space"] = str_replace(",", " ", $entries2[$count]["keywords"]); 
-      $entries2[$count]["desc"] = html_entity_decode($data->description, ENT_QUOTES, 'UTF-8');
-      $count++;
-    }   
-    $entriesSorted = subval_sort($entries2,'year');
-  }
-  return $entriesSorted;
+function returnPortfolioEntries($keywordToMatch = false) {
+    $entries = get_entries();
+    $entriesSorted = array();
+    if (!empty($entries)) {
+        $entries2 = Array();
+        $count=0;
+        foreach ($entries as $entry) {
+            $id = basename($entry, ".xml");
+            $file = GSDATAPORTFOLIOPATH . $entry;
+            $data = getXML($file);
+            if (!$keywordToMatch||in_array($keywordToMatch,explode(',',strtolower(html_entity_decode($data->keywords, ENT_QUOTES, 'UTF-8'))))) {
+                $entries2[$count]["id"] = $id;
+                $entries2[$count]["visuel"] = $data->visuel; // retrocompatibilité
+                $entries2[$count]["img"] = $entries2[$count]["visuel"];
+                $entries2[$count]["thumb"] = $data->thumb;
+                $entries2[$count]["month"] = $data->month;
+                $entries2[$count]["year"] = $data->year;
+                $entries2[$count]["url"] = $data->url;
+                $entries2[$count]["name"] = html_entity_decode($data->name, ENT_QUOTES, 'UTF-8');
+                $entries2[$count]["client"] = html_entity_decode($data->client, ENT_QUOTES, 'UTF-8');// retrocompatibilité
+                $entries2[$count]["customer"] = $entries2[$count]["client"];
+                $entries2[$count]["keywords"] = strtolower(html_entity_decode($data->keywords, ENT_QUOTES, 'UTF-8'));
+                $entries2[$count]["keywords_with_space"] = str_replace(",", " ", $entries2[$count]["keywords"]);
+                $entries2[$count]["desc"] = html_entity_decode($data->description, ENT_QUOTES, 'UTF-8');
+                $count++;
+            }
+        }
+        $entriesSorted = subval_sort($entries2,'year');
+    }
+    return $entriesSorted;
 }
 ############################## HELPER FUNCTIONS ################################
 
